@@ -1,3 +1,5 @@
+# WORK IN PROGRESS - still useless
+
 # Whole repository is template for new Node.js TypeScript module. Download it and adapt to your needs.
 
 - [About](#about)
