@@ -1,0 +1,48 @@
+{
+  "name": "TODO",
+  "version": "1.0.0",
+  "description": "TODO",
+  "main": "./lib/src/index.js",
+  "scripts": {
+    "start": "tsc && node lib/src/index.js",
+    "build": "tsc  &&  npm run lint",
+    "build:publish": "npm run clean && npm run lint && tsc --sourceMap false && rm -rf lib/test",
+    "clean": "rm -rf .nyc_output coverage lib",
+    "lint": "tslint -p ./tsconfig.json",
+    "prepublishOnly": "rm -rf lib/test  &&  npm run build:publish  &&  npm run test",
+    "test": "nyc  -r lcov -e .ts -x \"*.spec.ts\" jasmine-ts JASMINE_CONFIG_PATH=test/jasmine.json",
+    "__prepare_comment": "Prepare will NOT be executed in case of calling 'npm install --production'",
+    "prepare": "npm install tslint typescript -g"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TODO_USERNAME/TODO_PROJECT_NAME.git"
+  },
+  "keywords": [
+    "TODO",
+    "TODO"
+  ],
+  "author": "TODO",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/fs-extra": "^5.0.4",
+    "@types/jasmine": "2.5.35",
+    "@types/node": "10.10.1",
+    "@types/through2": "^2.0.34",
+    "istanbul": "1.1.0-alpha.1",
+    "jasmine": "2.5.2",
+    "jasmine-ts": "0.2.1",
+    "nyc": "13.0.1",
+    "through2": "^2.0.3",
+    "ts-node": "1.6.0",
+    "tslint": "5.11.0",
+    "typescript": "2.9.2"
+  },
+  "bugs": {
+    "url": "https://github.com/TODO_USERNAME/TODO_PROJECT_NAME/issues"
+  },
+  "homepage": "https://github.com/TODO_USERNAME/TODO_PROJECT_NAME#readme",
+  "dependencies": {
+    "fs-extra": "^7.0.0"
+  }
+}
