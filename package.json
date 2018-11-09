@@ -43,6 +43,7 @@
   },
   "homepage": "https://github.com/TODO_USERNAME/TODO_PROJECT_NAME#readme",
   "dependencies": {
-    "fs-extra": "^7.0.0"
+    "fs-extra": "^7.0.0",
+    "pad-left": "^2.1.0"
   }
 }

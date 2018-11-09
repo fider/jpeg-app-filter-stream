@@ -2,7 +2,7 @@ import { DuplexOptions, ReadableOptions, WritableOptions, Writable, Readable } f
 import { createReadStream, createWriteStream, readFileSync } from "fs";
 import * as fsExtra from "fs-extra";
 import { join } from "path";
-import { getJpegExifFilter } from "../../src";
+import { getJpegExifFilter } from "../../src/jpeg-app-filter-stream";
 import { tmpdir } from "os";
 import through2 = require("through2");
 
@@ -21,7 +21,7 @@ describe("index", function() {
     beforeAll( async function(done: DoneFn) {
 
         expectedImageWihoutExif = (await fsExtra.readFile(jpegNoExif)).toString();
-        jasmine.DEFAULT_TIMEOUT_INTERVAL = 999999;
+        jasmine.DEFAULT_TIMEOUT_INTERVAL = 10000;
 
         done();
     });
@@ -200,23 +200,22 @@ describe("index", function() {
 
 
 
-    fdescribe("E2E test - is backpressure works as expected.", function() {
+    describe("E2E test - is backpressure works as expected.", function() {
 
         it(`Should handle backpressure correctly`, async function(done: DoneFn) {
 
             //
             // Prepare
             //
-            let ops: Array<"S" | "D"> = [];
+            let operations: Array<"S" | "D"> = [];
             let output: Buffer[] = [];
+
 
             let input: Buffer = await fsExtra.readFile(jpegWithExif);
             const source = new Readable({
-                highWaterMark: 10,
+                highWaterMark: 100,
                 read(size) {
-                    // if (size !== 30) { console.log(`READ SIZE DIFFERS FROM EXPECTED: ${size}`)}
-            console.log(`source read size ${size}`)
-                    ops.push("S");
+                    operations.push("S");
                     let data: Buffer | null = input.slice(0, size);
                     input = input.slice(size);
 
@@ -227,18 +226,21 @@ describe("index", function() {
                 }
             });
 
+
             const filter = getJpegExifFilter({
-                highWaterMark: 40
+                highWaterMark: 10
             });
 
+
             const destination = new Writable({
-                // highWaterMark: 30,
+                highWaterMark: 10,
                 write(chunk, _enc, callback) {
-                    ops.push("D");
+                    operations.push("D");
                     output.push(chunk);
                     setTimeout( callback, 0 );
                 }
             });
+
 
             //
             // Run
@@ -269,7 +271,10 @@ describe("index", function() {
                     fail(`Result differs from expectations`);
                 }
 
-                console.log(ops.join(""));
+                if (operations.join("").indexOf("SDDDDDDDDDDSDDDDDDDDDDDSDDDDDDDDDDSDDDDDDDDDDDSDDDDDDDDDDS") === -1) {
+                    fail(`Seems that backpressure is not working as expected.`);
+                }
+
                 done();
             });
 
