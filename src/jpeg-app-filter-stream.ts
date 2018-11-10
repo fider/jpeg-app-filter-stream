@@ -52,7 +52,7 @@ enum eState {
 
 
 
-class JpegExifFilter extends Duplex {
+class JpegAppFilterStream extends Duplex {
 
 
     private data: Buffer = Buffer.from("");
@@ -390,7 +390,7 @@ class JpegExifFilter extends Duplex {
 
 
     private isInputBufferReady() {
-        return this.data.length < this.writableHighWaterMark;
+        return this.data.length < Math.max(5, this.writableHighWaterMark);
     }
 
 
@@ -542,6 +542,6 @@ class JpegExifFilter extends Duplex {
 
 
 
-export function getJpegExifFilter(opts?: DuplexOptions) {
-    return new JpegExifFilter(opts);
+export function getJpegAppFilterStream(opts?: DuplexOptions) {
+    return new JpegAppFilterStream(opts);
 }

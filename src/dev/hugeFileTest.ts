@@ -6,7 +6,7 @@
 import { join } from "path";
 import { tmpdir } from "os";
 import { createWriteStream } from "fs";
-import { eLogLevel, getJpegExifFilter } from "../jpeg-app-filter-stream";
+import { eLogLevel, getJpegAppFilterStream } from "../jpeg-app-filter-stream";
 import { Readable, Writable } from "stream";
 
 
@@ -152,7 +152,7 @@ async function test() {
         }
     });
 
-    let filter = getJpegExifFilter();
+    let filter = getJpegAppFilterStream();
 
 
     source

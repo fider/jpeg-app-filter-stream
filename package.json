@@ -28,12 +28,10 @@
     "@types/fs-extra": "^5.0.4",
     "@types/jasmine": "2.5.35",
     "@types/node": "10.10.1",
-    "@types/through2": "^2.0.34",
     "istanbul": "1.1.0-alpha.1",
     "jasmine": "2.5.2",
     "jasmine-ts": "0.2.1",
     "nyc": "13.0.1",
-    "through2": "^2.0.3",
     "ts-node": "1.6.0",
     "tslint": "5.11.0",
     "typescript": "2.9.2"

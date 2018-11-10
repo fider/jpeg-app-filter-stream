@@ -10,12 +10,12 @@ export enum eLogLevel {
     LOG_ALL_DEBUG
 }
 
-(<any>global).jpegAppFilterStreamLogLevel = (<any>global).jpegAppFilterStreamLogLevel ? (<any>global).jpegAppFilterStreamLogLevel : eLogLevel.LOG_NONE;
+(<any>global).pngAppFilterStreamLogLevel = (<any>global).pngAppFilterStreamLogLevel ? (<any>global).pngAppFilterStreamLogLevel : eLogLevel.LOG_NONE;
 
 let debug = (_: any) => {};
 let important = (_: any) => {};
 
-switch ((<any>global).jpegAppFilterStreamLogLevel as any) {
+switch ((<any>global).pngAppFilterStreamLogLevel as any) {
 
     case eLogLevel.LOG_IMPORTANT_ONLY: {
         important = console.log;
@@ -24,7 +24,7 @@ switch ((<any>global).jpegAppFilterStreamLogLevel as any) {
 
     case eLogLevel.LOG_ALL_DEBUG: {
         important = console.log;
-        debug = console.log
+        debug = console.log;
         break;
     }
 }
@@ -33,7 +33,58 @@ switch ((<any>global).jpegAppFilterStreamLogLevel as any) {
 // ================================================================================
 
 const PNG_SIGNATURE_HEX = "89504e470d0a1a0a";
+
+// Critical chunks (mandatory to render image)
 const IHDR = 1229472850;
+const PLTE = 1347179589;
+const IDAT = 1229209940;
+const IEND = 1229278788;
+
+// Ancillary chunks (not mandatory but they help with better image display)
+const cHRM = 1665684045;
+const gAMA = 1732332865;
+const iCCP = 1766015824;
+const sBIT = 1933723988;
+const sRGB = 1934772034;
+const bKGD = 1649100612;
+const hIST = 1749635924;
+const tRNS = 1951551059;
+const pHYs = 1883789683;
+const sPLT = 1934642260;
+
+// Other standard chunks that do not helps to render image
+// const tIME = 1950960965;
+// const iTXt = 1767135348;
+// const tEXt = 1950701684;
+// const zTXt = 2052348020;
+
+// Other known special purpose chunk types
+// oFFs
+// pCAL
+// sCAL
+// gIFg
+// gIFt
+// gIFx
+// sTER
+// dSIG
+// eXIf
+// fRAc
+
+const chunkTypeWhitelist = [
+    PLTE,
+    IDAT,
+    IEND,
+    cHRM,
+    gAMA,
+    iCCP,
+    sBIT,
+    sRGB,
+    bKGD,
+    hIST,
+    tRNS,
+    pHYs,
+    sPLT
+];
 
 
 enum eState {
@@ -54,7 +105,7 @@ enum eState {
 
 
 
-class JpegExifFilter extends Duplex {
+class PngAppFilter extends Duplex {
 
 
     private data: Buffer = Buffer.from("");
@@ -65,9 +116,6 @@ class JpegExifFilter extends Duplex {
     private outputBufferReady = true;
     private lastWriteCallack = this.empty;
     private processingData = false;
-
-    // Error info only
-    private bytesProcessed = 0;
 
 
     // Maintenance & debug
@@ -124,6 +172,7 @@ class JpegExifFilter extends Duplex {
                 needMoreData = false;
 
 
+                // Maintenance & debug
                 if (this._prevState !== this.state) {
                     debug(`  new state ${this.state}`);
                     this._prevState = this.state;
@@ -162,13 +211,12 @@ class JpegExifFilter extends Duplex {
                         let chunkType = this.getChunkType();
                         let chunkLength = this.getTotalChunkLength();
 
-                        if (chunkType !== IHDR) {
+                        if ( ! this.isIHDRChunkType(chunkType)) {
                             this.destroy( new Error(`PngAppFilterStream input stream error. Details: expecting IHDR chunk type 0x49484452 but 0x${chunkType.toString(16).toUpperCase()} found instead.`) );
                         }
 
                         this.state = eState.EXPECT_CHUNK;
 
-                        // 4b size + 4b chunk type + 4b crc
                         this.passBytes(chunkLength);
                     }
 
@@ -182,13 +230,8 @@ class JpegExifFilter extends Duplex {
 
                         let chunkType = this.getChunkType();
 
-                        if ( this.isMandatoryChunkType(chunkType) ) {
+                        if ( this.isOtherMandatoryChunkType(chunkType) ) {
                             this.state = eState.MANDATORY_CHUNK_FOUND;
-                            break;
-
-                        }
-                        else if ( this.isValidChunkTypeValue(chunkType) ) {
-                            this.state = eState.REDUNDANT_CHUNK_FOUND;
                             break;
 
                         }
@@ -196,6 +239,10 @@ class JpegExifFilter extends Duplex {
                             this.state = eState.IEND_FOUND;
                             break;
 
+                        }
+                        else if ( this.isValidPngChunkType(chunkType) ) {
+                            this.state = eState.REDUNDANT_CHUNK_FOUND;
+                            break;
                         }
                         else {
                             this.destroy( new Error(`PngAppFilterStream input stream data error. Details: invalid chunk type value found 0x${padLeft(chunkType.toString(16).toUpperCase(), 8, "0")}. Expecting that each byte is in range  0x41 to 0x5A  or  0x61 to 0x7A`) );
@@ -211,8 +258,7 @@ class JpegExifFilter extends Duplex {
                             break; // wait for more data
                         }
 
-                        this.skipBytesLeft = this.getLengthOfWholeSegment();
-
+                        this.skipBytesLeft = this.getTotalChunkLength();
                         this.state = eState.SKIP_BYTES;
 
                         break;
@@ -250,7 +296,7 @@ class JpegExifFilter extends Duplex {
                             break; // wait for more data
                         }
 
-                        this.passBytesLeft = this.getLengthOfWholeSegment();
+                        this.passBytesLeft = this.getTotalChunkLength();
 
                         this.state = eState.PASS_BYTES;
 
@@ -283,85 +329,14 @@ class JpegExifFilter extends Duplex {
                     }
 
 
-                    case eState.SOS_MARKER_FOUND: {
-
-                        if (this.data.length < 5) {
-                            needMoreData = true;
-                            break;
-                        }
-
-                        this.state = eState.PASS_BYTES_UNTIL_NEXT_NON_SOS_MARKER;
-                        this.passBytes(5);
-
-
-                        break;
-                    }
-
-
-                    case eState.PASS_BYTES_UNTIL_NEXT_NON_SOS_MARKER: {
-                        if (this.data.length < 2) {
-                            needMoreData = true;
-                            break;
-                        }
-
-                        let index;
-                        let offset = 0;
-                        let flushData = true;
-
-                        while( (index = this.data.indexOf("ff", offset, "hex")) >= 0) {
-
-                            // Need 2 bytes to read whole marker
-                            if (index + 2 > this.data.length ) {
-                                // Found begin of marker (0xFF) but it is end of data buffer so I am unable to check what marker it is
-                                // Need to wait for at least one more byte.
-                                flushData = false;
-
-                                // Pass all but last byte (keep last 0xFF).
-                                // Last 0xFF will be necessary when more data will arrive to properly read marker.
-                                this.passAllBytesExceptLast(1);
-
-                                needMoreData = true;
-                                break;
-                            }
-                            else if ( this.isNextMarkerThatEndsSosData( this.getMarker(index) ) ) {
-                                // Found end of SOS segment
-                                flushData = false;
-
-
-                                if (index) {
-                                    this.passBytes(index);
-                                }
-
-                                this.state = eState.EXPECT_CHUNK;
-                                break;
-                            }
-                            else {
-                                // Found 0xFF but it is not known marker - continue to search.
-                                // If nothing found in whole data buffer then flush it all.
-                                flushData = true;
-                            }
-
-
-                            // Nothing found, increase search offset and continue to search
-                            offset = index + 2; // 2 bytes after
-                        }
-
-                        // Nothig found - pass all and wait for more data
-                        if (flushData && this.data.length) {
-                            this.passBytes( this.data.length );
-                        }
-                        needMoreData = true;
-
-                        break;
-                    }
-
-
                     case eState.IEND_FOUND: {
                         this.state = eState.END;
-                        this.passBytes(2); // PASS EOI
+
+                        let lastChunkLength = this.getTotalChunkLength();
+                        this.passBytes(lastChunkLength);
 
                         if (this.data.length) {
-                            this.destroy( new Error(`JpegExifFilter input stream error. Details: EOI (end of image) so expected end of stream without more data. Bytes left: ${this.data.length}`) );
+                            this.destroy( new Error(`PngAppFilterStream input stream error. Details: EOI (end of image) so expected end of stream without more data. Bytes left: ${this.data.length}`) );
                             break;
                         }
 
@@ -382,7 +357,7 @@ class JpegExifFilter extends Duplex {
 
 
                     default: {
-                        this.destroy( new Error(`JpegExifFilter internal error. Details: processData() unknown state: ${this.state}`) );
+                        this.destroy( new Error(`PngAppFilterStream internal error. Details: processData() unknown state: ${this.state}`) );
                     }
                 }
 
@@ -411,7 +386,6 @@ class JpegExifFilter extends Duplex {
         return this.data.readUInt32BE(4);
     }
 
-
     private getTotalChunkLength() {
         if (this.data.length < 4) {
             this.destroy( new Error(`PngAppFilterStream internal error. Details: getChunkLength() not enough data (${this.data.length} bytes) to read chunk data length.`) );
@@ -422,151 +396,64 @@ class JpegExifFilter extends Duplex {
     }
 
 
+    private isIHDRChunkType(chunkType: number) {
+        return  chunkType === IHDR;
+    }
+
+    private isIENDChunkType(chunkType: number) {
+        return  chunkType === IEND;
+    }
+
+    private isOtherMandatoryChunkType(chunkType: number) {
+        return chunkTypeWhitelist.includes(chunkType);
+    }
+
+    private isValidPngChunkType(chunkType: number) {
+        let byte1 = (chunkType >> 0)  & 0xFF;
+        let byte2 = (chunkType >> 8)  & 0xFF;
+        let byte3 = (chunkType >> 16) & 0xFF;
+        let byte4 = (chunkType >> 24) & 0xFF;
+
+        // Ech byte in range a-z or A-Z
+        return (
+            ( (65 <= byte1 && byte1 <= 90)  ||  ( 97 <= byte1 && byte1 <= 122 ) ) &&
+            ( (65 <= byte2 && byte2 <= 90)  ||  ( 97 <= byte2 && byte2 <= 122 ) ) &&
+            ( (65 <= byte3 && byte3 <= 90)  ||  ( 97 <= byte3 && byte3 <= 122 ) ) &&
+            ( (65 <= byte4 && byte4 <= 90)  ||  ( 97 <= byte4 && byte4 <= 122 ) )
+        )
+    }
 
 
     private isInputBufferReady() {
-        return this.data.length < this.writableHighWaterMark;
-    }
-
-
-    private isNextMarkerThatEndsSosData(marker: number) {
-        return (
-            this.isMandatoryMarkerWihtKnownLength(marker)
-             ||
-            this.isAppMarker(marker)
-             ||
-            this.isJpgMarker(marker)
-             ||
-            this.isComMarker(marker)
-             ||
-            this.isEoiMarker(marker)
-             ||
-            this.isSosMarker(marker) // In theory should not occure just after SOS
-        );
-
-        /*
-            Other markers, not included above:
-            0xFF00:  Special value used to encode 0xFF inside SOS data segment.
-            0xFF01:  TEM (private use in arithmetic coding. Standalone marker - not followed by 2 bytes of length. IMO. it can be part of SOS data segment)
-            0xFF02 - 0xFFBF:  reserved (so IMO. they should not appear as part of encoded data inside SOS segment)
-            0xFFD0 - 0xFFD7:  RST (standalone marker used inside encoded SOS data segment)
-        */
-    }
-
-    private isSoiMarker(marker: number) {
-        return marker !== 0xFFD8; // SOI - start of image (start of jpeg stream)
-    }
-
-    private isMandatoryMarkerWihtKnownLength(marker: number) {
-        return (
-            (0xFFC0 <= marker  &&  marker <= 0xFFCF) // SOF_0 - SOF_15  (SOF_4=DHT, SOF_12=DAC)
-             ||
-            (0xFFDB <= marker  &&  marker <= 0xFFDF) // DQT, DNL, DRI, DHP, EXP
-        );
-    }
-
-    private isSosMarker(marker: number) {
-        return  marker === 0xFFDA; // SOS - start of scan
-    }
-
-    private isAppMarker(marker: number) {
-        return  (0xFFE0 <= marker  &&  marker <= 0xFFEF); // Reserved for application segments
-    }
-
-    private isJpgMarker(marker: number) {
-        return  (0xFFF0 <= marker  &&  marker <= 0xFFFD); // Reserved for JPEG extension
-    }
-
-    private isComMarker(marker: number) {
-        return  marker === 0xFFFE; // COM - comment
-    }
-
-    private isEoiMarker(marker: number) {
-        return marker === 0xFFD9; // EOI - end of image (end of jpeg stream)
-    }
-
-
-    private getLengthOfWholeSegment(index = 0) {
-        // Expecting 0xMMMMSSSS
-        // M - marker
-        // S - data length (uint16 big endian)
-
-        // IF  long enough to read segment length
-        if ((this.data.length - index < 4)) {
-            this.destroy( new Error(`JpegExifFilter internal error. Details: getMarkerAndDataLength() not enough data (${this.data.length} bytes) to read marker length at position ${index}.`) );
-        }
-
-        // IF  is marker
-        if (this.data.readUInt8(0) !== 0xFF) {
-            this.destroy( new Error(`JpegExifFilter internal error. Details: getMarkerAndDataLength() data is not marker: 0x${this.data.slice(0, 2).toString("hex")}`) );
-        }
-
-
-        // 2 bytes of marker + segment length (2 bytes that contains length + data bytes)
-        return ( 2 + this.data.readUInt16BE(2) );
+        // 8 bytes is minimum required by most of state machine cases
+        return this.data.length < Math.max(8, this.writableHighWaterMark);
     }
 
 
     private passBytes(length: number) {
         // Double check. I should ensure that I have enough bytes in this.data buffer before call passBytes().
         if (this.data.length < length || length < 1) {
-            this.destroy( new Error(`JpegExifFilter internal error. Details: passBytes() not enough data inside internal buffer (${this.data.length} bytes) to pass ${length} bytes.`) );
+            this.destroy( new Error(`PngAppFilterStream internal error. Details: passBytes() not enough data inside internal buffer (${this.data.length} bytes) to pass ${length} bytes.`) );
         }
 
         let dataToPush = this.data.slice(0, length);
         this.data = this.data.slice(length);
 
-        this.bytesProcessed += length;
 
         debug(`   pushing...  ${dataToPush.toString("hex").substr(0,12)}... (${dataToPush.length} bytes)`);
         this.outputBufferReady = this.push(dataToPush);
         debug(`   ....pushed  ${dataToPush.toString("hex").substr(0,12)}... (${dataToPush.length} bytes)    left ${this.data.slice(0, 12).toString("hex")}...`);
     }
 
-
-    private passAllBytesExceptLast(length: number) {
-        // Double check. I should ensure that I have enough bytes in this.data buffer before call passAllBytesExceptLast().
-        if (this.data.length < length || length < 0) {
-            this.destroy( new Error(`JpegExifFilter internal error. Details: passAllBytesExceptLast() not enough data inside internal buffer (${this.data.length} bytes) to pass ${length} bytes.`) );
-        }
-
-        let numOfBytesToPass = this.data.length - length;
-        if (numOfBytesToPass === 0) {
-            return;
-        }
-
-        let dataToPush = this.data.slice(0, numOfBytesToPass);
-        this.data = this.data.slice(numOfBytesToPass);
-
-        // // debug(`# Pass ${dataToPush.toString("hex")}  (next: ${this.data.toString("hex").substr(0,10)})`);
-        this.bytesProcessed += length;
-
-        debug(`   pushing...  ${dataToPush.toString("hex").substr(0,12)}... (${dataToPush.length} bytes)`);
-        this.outputBufferReady = this.push(dataToPush);
-        debug(`   ....pushed  ${dataToPush.toString("hex").substr(0,12)}... (${dataToPush.length} bytes)`);
-    }
-
-
     private skipBytes(length: number) {
         // Double check. I should ensure that I have enough bytes in this.data buffer before call skipBytes().
         if (this.data.length < length || length < 1) {
-            this.destroy( new Error(`JpegExifFilter internal error. Details: skipBytes() not enough data inside internal buffer (${this.data.length} bytes) to skip ${length} bytes.`) );
+            this.destroy( new Error(`PngAppFilterStream internal error. Details: skipBytes() not enough data inside internal buffer (${this.data.length} bytes) to skip ${length} bytes.`) );
         }
 
-        this.bytesProcessed += length;
         let skippedData = this.data.slice(0, length);
         this.data = this.data.slice(length);
         debug(`   skip ${skippedData.toString("hex").substr(0, 12)}  (${length} bytes)   (next: ${this.data.toString("hex").substr(0,12)})`);
-    }
-
-
-    private getMarker(index = 0) {
-        // Double check. I should ensure that I have enough bytes in this.data buffer before call getMarker().
-        if (this.data.length - index < 2) {
-            this.destroy( new Error(`JpegExifFilter internal error. Details: getMarker() not enough data inside internal buffer (${this.data.length} bytes) to read marker at position ${index}.`) );
-        }
-
-        return this.data.readUInt16BE(index);
     }
 
 
@@ -577,6 +464,6 @@ class JpegExifFilter extends Duplex {
 
 
 
-export function getJpegExifFilter(opts?: DuplexOptions) {
-    return new JpegExifFilter(opts);
+export function getPngAppFilterStream(streamOpts?: DuplexOptions) {
+    return new PngAppFilter(streamOpts);
 }

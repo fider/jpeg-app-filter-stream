@@ -1,6 +1,6 @@
 import { join } from "path";
 import { createReadStream, createWriteStream } from "fs";
-import { getJpegExifFilter } from "./jpeg-app-filter-stream";
+import { getJpegAppFilterStream } from "./jpeg-app-filter-stream";
 import { Transform, TransformCallback, Duplex } from "stream";
 
 
