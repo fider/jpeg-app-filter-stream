@@ -1,9 +1,9 @@
 import {Writable, Readable } from "stream";
-import { createReadStream, createWriteStream } from "fs";
+import { createReadStream } from "fs";
 import * as fsExtra from "fs-extra";
 import { join } from "path";
 
-(<any>global).pngAppFilterStreamLogLevel = 2
+// (<any>global).pngAppFilterStreamLogLevel = 2;
 import { getPngAppFilterStream } from "../../src/png-app-filter-stream";
 
 
@@ -12,13 +12,11 @@ const pngWithExif = join(__dirname, "../../assets/thexifer.net.png");
 const pngNoExif = join(__dirname, "../../assets/clean.png");
 
 let expectedImageWihoutExif: Buffer;
-let jasmineDefaultTimeout = jasmine.DEFAULT_TIMEOUT_INTERVAL;
+const jasmineDefaultTimeout = jasmine.DEFAULT_TIMEOUT_INTERVAL;
 
 
-createReadStream(pngWithExif).pipe( getPngAppFilterStream() ).pipe( createWriteStream(pngNoExif) );
 
-
-xdescribe("PngAppFilterStream", function() {
+describe("PngAppFilterStream", function() {
 
 
     beforeAll( async function(done: DoneFn) {
@@ -67,8 +65,8 @@ xdescribe("PngAppFilterStream", function() {
         for (let hwm of highWaterMarks) {
 
 
-            it(`Should properly remove exif from jpeg file when highWaterMark of source=${hwm.source || "default"} ` +
-               `JpegExifFilter=${hwm.filter || "default"} destination=${hwm.destination || "default"}. `,
+            it(`Should properly remove exif from png file when highWaterMark of source=${hwm.source || "default"} ` +
+               `PngExifFilter=${hwm.filter || "default"} destination=${hwm.destination || "default"}. `,
                 async function(done: DoneFn) {
 
                 //
@@ -107,7 +105,7 @@ xdescribe("PngAppFilterStream", function() {
                     fail(`FAIL of source: ${err}`);
                 });
                 filter.on("error", function (err) {
-                    fail(`FAIL of JpegExifFilter: ${err}`);
+                    fail(`FAIL of PngExifFilter: ${err}`);
                 });
                 destination.on("error", function (err) {
                     fail(`FAIL of destination: ${err}`);
@@ -138,8 +136,8 @@ xdescribe("PngAppFilterStream", function() {
         for (let hwm of highWaterMarks) {
 
 
-            it(`Should properly remove exif from jpeg file when highWaterMark of source=${hwm.source || "default"} ` +
-               `JpegExifFilter=${hwm.filter || "default"} destination=${hwm.destination || "default"}. `,
+            it(`Should properly remove exif from png file when highWaterMark of source=${hwm.source || "default"} ` +
+               `PngExifFilter=${hwm.filter || "default"} destination=${hwm.destination || "default"}. `,
                 async function(done: DoneFn) {
 
                 //
@@ -178,7 +176,7 @@ xdescribe("PngAppFilterStream", function() {
                     fail(`FAIL of source: ${err}`);
                 });
                 filter.on("error", function (err) {
-                    fail(`FAIL of JpegExifFilter: ${err}`);
+                    fail(`FAIL of PngExifFilter: ${err}`);
                 });
                 destination.on("error", function (err) {
                     fail(`FAIL of destination: ${err}`);
@@ -214,9 +212,9 @@ xdescribe("PngAppFilterStream", function() {
             let output: Buffer[] = [];
 
 
-            let input: Buffer = await fsExtra.readFile(pngWithExif);
+            let input: Buffer = await fsExtra.readFile(pngNoExif);
             const source = new Readable({
-                highWaterMark: 100,
+                highWaterMark: 12,
                 read(size) {
                     operations.push("S");
                     let data: Buffer | null = input.slice(0, size);
@@ -231,12 +229,12 @@ xdescribe("PngAppFilterStream", function() {
 
 
             const filter = getPngAppFilterStream({
-                highWaterMark: 10
+                highWaterMark: 12
             });
 
 
             const destination = new Writable({
-                highWaterMark: 10,
+                highWaterMark: 3,
                 write(chunk, _enc, callback) {
                     operations.push("D");
                     output.push(chunk);
@@ -260,7 +258,7 @@ xdescribe("PngAppFilterStream", function() {
                 fail(`FAIL of source: ${err}`);
             });
             filter.on("error", function (err) {
-                fail(`FAIL of JpegExifFilter: ${err}`);
+                fail(`FAIL of PngExifFilter: ${err}`);
             });
             destination.on("error", function (err) {
                 fail(`FAIL of destination: ${err}`);
@@ -274,8 +272,8 @@ xdescribe("PngAppFilterStream", function() {
                     fail(`Result differs from expectations`);
                 }
 
-                if (operations.join("").indexOf("SDDDDDDDDDDSDDDDDDDDDDDSDDDDDDDDDDSDDDDDDDDDDDSDDDDDDDDDDS") === -1) {
-                    fail(`Seems that backpressure is not working as expected.`);
+                if (operations.join("").indexOf("SSDSSSDDSDSDDSDSDSDDD") === -1) {
+                    fail(`Seems that backpressure is not working as expected. Details: Sequence of Source/Destination: "${operations.join("")}"`);
                 }
 
                 done();

@@ -140,8 +140,8 @@ class JpegAppFilterStream extends Duplex {
 
                         let marker = this.getMarker();
 
-                        if ( this.isSoiMarker(marker) ) {
-                            this.destroy( new Error(`Stream is not JPEG. Expected first bytes to be 0xFFD8. Actual: 0x${marker.toString(16).toUpperCase()}`) );
+                        if ( ! this.isSoiMarker(marker) ) {
+                            return this.destroy( new Error(`Stream is not JPEG. Expected first bytes to be 0xFFD8. Actual: 0x${marker.toString(16).toUpperCase()}`) );
                         }
 
                         this.state = eState.EXPECT_MARKER;
@@ -184,7 +184,7 @@ class JpegAppFilterStream extends Duplex {
 
                         }
                         else {
-                            this.destroy( new Error(`JpegExifFilter input stream data error. Details: expecting known JPEG data marker. Unkown marker found 0x${marker.toString(16).toUpperCase()} at byte ${this.bytesProcessed}`) );
+                            return this.destroy( new Error(`JpegExifFilter input stream data error. Details: expecting known JPEG data marker. Unkown marker found 0x${marker.toString(16).toUpperCase()} at byte ${this.bytesProcessed}`) );
                             break;
                         }
                     }
@@ -347,10 +347,8 @@ class JpegAppFilterStream extends Duplex {
                         this.passBytes(2); // PASS EOI
 
                         if (this.data.length) {
-                            this.destroy( new Error(`JpegExifFilter input stream error. Details: EOI (end of image) so expected end of stream without more data. Bytes left: ${this.data.length}`) );
-                            break;
+                            return this.destroy( new Error(`JpegExifFilter input stream error. Details: EOI (end of image) so expected end of stream without more data. Bytes left: ${this.data.length}`) );
                         }
-
                     }
 
 
@@ -419,7 +417,7 @@ class JpegAppFilterStream extends Duplex {
     }
 
     private isSoiMarker(marker: number) {
-        return marker !== 0xFFD8; // SOI - start of image (start of jpeg stream)
+        return marker === 0xFFD8; // SOI - start of image (start of jpeg stream)
     }
 
     private isMandatoryMarkerWihtKnownLength(marker: number) {
@@ -503,7 +501,6 @@ class JpegAppFilterStream extends Duplex {
         let dataToPush = this.data.slice(0, numOfBytesToPass);
         this.data = this.data.slice(numOfBytesToPass);
 
-        // // debug(`# Pass ${dataToPush.toString("hex")}  (next: ${this.data.toString("hex").substr(0,10)})`);
         this.bytesProcessed += length;
 
         debug(`   pushing...  ${dataToPush.toString("hex").substr(0,12)}... (${dataToPush.length} bytes)`);

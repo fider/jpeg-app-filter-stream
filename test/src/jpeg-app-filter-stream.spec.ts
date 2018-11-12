@@ -2,6 +2,8 @@ import {Writable, Readable } from "stream";
 import { createReadStream } from "fs";
 import * as fsExtra from "fs-extra";
 import { join } from "path";
+
+// (<any>global).jpegAppFilterStreamLogLevel = 2;
 import { getJpegAppFilterStream } from "../../src/jpeg-app-filter-stream";
 
 
@@ -55,7 +57,7 @@ describe("JpegAppFilterStream", function() {
 
 
 
-    describe("E2E test for source that consumes data immediately (filter.push causes that destination will call filter._read before"
+    describe("E2E test for source that consumes data immediately (filter.push causes that destination will call filter._read before "
            + "filter.push will return).", function() {
 
 

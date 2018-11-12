@@ -68,12 +68,12 @@ const sPLT = 1934642260;
 // sTER
 // dSIG
 // eXIf
-// fRAc
+// fRAcv
 
 const chunkTypeWhitelist = [
     PLTE,
     IDAT,
-    IEND,
+    // IEND, // special case
     cHRM,
     gAMA,
     iCCP,
@@ -129,8 +129,6 @@ class PngAppFilter extends Duplex {
 
         this._maxBufferLength =  Math.max(this.data.length, this._maxBufferLength);
 
-        this.processData();
-
         this.lastWriteCallack = callback;
 
         if (this.outputBufferReady) {
@@ -145,7 +143,7 @@ class PngAppFilter extends Duplex {
         if (size) {
             // // debug(`_read size ${size}`)
             if (typeof size !== "number"  ||  size < 0) {
-                this.destroy( new Error(`PngAppFilterStream invalid usage error. Stream that reads from PngAppFilterStream instace called read(size) with invalid size argument. Expected number >= 0. Actual: ${size}`) );
+                return this.destroy( new Error(`PngAppFilterStream invalid usage error. Stream that reads from PngAppFilterStream instace called read(size) with invalid size argument. Expected number >= 0. Actual: ${size}`) );
             }
             this.readSize = size;
         }
@@ -192,18 +190,18 @@ class PngAppFilter extends Duplex {
                         let pngSignature = this.data.toString("hex", 0, 8);
 
                         if ( pngSignature !== PNG_SIGNATURE_HEX ) {
-                            this.destroy( new Error(`Stream is not PNG. Expected first bytes to be 0x${PNG_SIGNATURE_HEX.toUpperCase()}. Actual: 0x${pngSignature.toUpperCase()}`) );
+                            return this.destroy( new Error(`Stream is not PNG. Expected first bytes to be 0x${PNG_SIGNATURE_HEX.toUpperCase()}. Actual: 0x${pngSignature.toUpperCase()}`) );
                         }
 
-                        this.state = eState.EXPECT_CHUNK;
-                        this.passBytes(4);
+                        this.state = eState.EXPECT_IHDR;
+                        this.passBytes(8);
 
                         break;
                     }
 
 
                     case eState.EXPECT_IHDR: {
-                        if (this.data.length < 8) {
+                        if (this.data.length < 12) {
                             needMoreData = true;
                             break; // wait for more data
                         }
@@ -212,23 +210,24 @@ class PngAppFilter extends Duplex {
                         let chunkLength = this.getTotalChunkLength();
 
                         if ( ! this.isIHDRChunkType(chunkType)) {
-                            this.destroy( new Error(`PngAppFilterStream input stream error. Details: expecting IHDR chunk type 0x49484452 but 0x${chunkType.toString(16).toUpperCase()} found instead.`) );
+                            return this.destroy( new Error(`PngAppFilterStream input stream error. Details: expecting IHDR chunk type 0x49484452 but 0x${chunkType.toString(16).toUpperCase()} found instead.`) );
                         }
 
-                        this.state = eState.EXPECT_CHUNK;
+                        this.state = eState.MANDATORY_CHUNK_FOUND;
 
-                        this.passBytes(chunkLength);
+                        break;
                     }
 
 
                     case eState.EXPECT_CHUNK: {
 
-                        if (this.data.length < 8) {
+                        if (this.data.length < 12) {
                             needMoreData = true;
                             break; // wait for more data
                         }
 
                         let chunkType = this.getChunkType();
+                        debug(`  chunk found: 0x${padLeft(chunkType.toString(16).toUpperCase(), 8, "0")}`);
 
                         if ( this.isOtherMandatoryChunkType(chunkType) ) {
                             this.state = eState.MANDATORY_CHUNK_FOUND;
@@ -245,8 +244,7 @@ class PngAppFilter extends Duplex {
                             break;
                         }
                         else {
-                            this.destroy( new Error(`PngAppFilterStream input stream data error. Details: invalid chunk type value found 0x${padLeft(chunkType.toString(16).toUpperCase(), 8, "0")}. Expecting that each byte is in range  0x41 to 0x5A  or  0x61 to 0x7A`) );
-                            break;
+                            return this.destroy( new Error(`PngAppFilterStream input stream data error. Details: invalid chunk type value found 0x${padLeft(chunkType.toString(16).toUpperCase(), 8, "0")}. Expecting that each byte is in range  0x41 to 0x5A  or  0x61 to 0x7A`) );
                         }
                     }
 
@@ -336,10 +334,10 @@ class PngAppFilter extends Duplex {
                         this.passBytes(lastChunkLength);
 
                         if (this.data.length) {
-                            this.destroy( new Error(`PngAppFilterStream input stream error. Details: EOI (end of image) so expected end of stream without more data. Bytes left: ${this.data.length}`) );
-                            break;
+                            return this.destroy( new Error(`PngAppFilterStream input stream error. Details: IEND (image en) so expected end of stream without more data. Bytes left: ${this.data.length}`) );
                         }
 
+                        break;
                     }
 
 
@@ -380,7 +378,7 @@ class PngAppFilter extends Duplex {
 
     private getChunkType() {
         if (this.data.length < 8) {
-            this.destroy( new Error(`PngAppFilterStream internal error. Details: getChunkType() not enough data (${this.data.length} bytes) to read chunk type.`) );
+            throw new Error(`PngAppFilterStream internal error. Details: getChunkType() not enough data (${this.data.length} bytes) to read chunk type.`);
         }
 
         return this.data.readUInt32BE(4);
@@ -388,7 +386,7 @@ class PngAppFilter extends Duplex {
 
     private getTotalChunkLength() {
         if (this.data.length < 4) {
-            this.destroy( new Error(`PngAppFilterStream internal error. Details: getChunkLength() not enough data (${this.data.length} bytes) to read chunk data length.`) );
+            throw new Error(`PngAppFilterStream internal error. Details: getChunkLength() not enough data (${this.data.length} bytes) to read chunk data length.`);
         }
 
         // Data length + 4b size + 4b chunk type + 4b CRC
@@ -425,15 +423,15 @@ class PngAppFilter extends Duplex {
 
 
     private isInputBufferReady() {
-        // 8 bytes is minimum required by most of state machine cases
-        return this.data.length < Math.max(8, this.writableHighWaterMark);
+        // 12 bytes is minimum required by most of state machine cases
+        return this.data.length < Math.max(12, this.writableHighWaterMark);
     }
 
 
     private passBytes(length: number) {
         // Double check. I should ensure that I have enough bytes in this.data buffer before call passBytes().
         if (this.data.length < length || length < 1) {
-            this.destroy( new Error(`PngAppFilterStream internal error. Details: passBytes() not enough data inside internal buffer (${this.data.length} bytes) to pass ${length} bytes.`) );
+            throw new Error(`PngAppFilterStream internal error. Details: passBytes() not enough data inside internal buffer (${this.data.length} bytes) to pass ${length} bytes.`);
         }
 
         let dataToPush = this.data.slice(0, length);
@@ -448,7 +446,7 @@ class PngAppFilter extends Duplex {
     private skipBytes(length: number) {
         // Double check. I should ensure that I have enough bytes in this.data buffer before call skipBytes().
         if (this.data.length < length || length < 1) {
-            this.destroy( new Error(`PngAppFilterStream internal error. Details: skipBytes() not enough data inside internal buffer (${this.data.length} bytes) to skip ${length} bytes.`) );
+            throw new Error(`PngAppFilterStream internal error. Details: skipBytes() not enough data inside internal buffer (${this.data.length} bytes) to skip ${length} bytes.`);
         }
 
         let skippedData = this.data.slice(0, length);
