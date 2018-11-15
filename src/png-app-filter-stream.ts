@@ -1,5 +1,4 @@
 import { Duplex, DuplexOptions } from "stream";
-const padLeft = require("pad-left") as (msg: string, length: number, padWith: string) => void;
 
 // ================================================================================
 // For maintenance and development purposes only
@@ -227,7 +226,7 @@ class PngAppFilter extends Duplex {
                         }
 
                         let chunkType = this.getChunkType();
-                        debug(`  chunk found: 0x${padLeft(chunkType.toString(16).toUpperCase(), 8, "0")}`);
+                        debug(`  chunk found: 0x${chunkType.toString(16).toUpperCase(), 8, "0"}`);
 
                         if ( this.isOtherMandatoryChunkType(chunkType) ) {
                             this.state = eState.MANDATORY_CHUNK_FOUND;
@@ -244,7 +243,7 @@ class PngAppFilter extends Duplex {
                             break;
                         }
                         else {
-                            return this.destroy( new Error(`PngAppFilterStream input stream data error. Details: invalid chunk type value found 0x${padLeft(chunkType.toString(16).toUpperCase(), 8, "0")}. Expecting that each byte is in range  0x41 to 0x5A  or  0x61 to 0x7A`) );
+                            return this.destroy( new Error(`PngAppFilterStream input stream data error. Details: invalid chunk type value found 0x${chunkType.toString(16).toUpperCase(), 8, "0"}. Expecting that each byte is in range  0x41 to 0x5A  or  0x61 to 0x7A`) );
                         }
                     }
 
@@ -407,10 +406,18 @@ class PngAppFilter extends Duplex {
     }
 
     private isValidPngChunkType(chunkType: number) {
+        // Faster
         let byte1 = (chunkType >> 0)  & 0xFF;
         let byte2 = (chunkType >> 8)  & 0xFF;
         let byte3 = (chunkType >> 16) & 0xFF;
         let byte4 = (chunkType >> 24) & 0xFF;
+
+        // Slower
+        // let chunk = Buffer.from(chunkType.toString(16), "hex");
+        // let byte1 = chunk[0];
+        // let byte2 = chunk[1];
+        // let byte3 = chunk[2];
+        // let byte4 = chunk[3];
 
         // Ech byte in range a-z or A-Z
         return (

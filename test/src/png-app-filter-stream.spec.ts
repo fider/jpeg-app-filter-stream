@@ -58,7 +58,7 @@ describe("PngAppFilterStream", function() {
 
 
 
-    describe("E2E test for source that consumes data immediately (filter.push causes that destination will call filter._read before"
+    describe("E2E test for destination that consume data immediately (filter.push causes that destination will call filter._read before"
            + "filter.push will return).", function() {
 
 
@@ -97,7 +97,6 @@ describe("PngAppFilterStream", function() {
                     .pipe( filter )
                     .pipe( destination );
 
-
                 //
                 // Verify
                 //
@@ -130,7 +129,7 @@ describe("PngAppFilterStream", function() {
 
 
 
-    describe("E2E test for source that consumes data with delay.", function() {
+    describe("E2E test for destination that consume data with delay.", function() {
 
 
         for (let hwm of highWaterMarks) {
@@ -167,7 +166,6 @@ describe("PngAppFilterStream", function() {
                 source
                     .pipe( filter )
                     .pipe( destination );
-
 
                 //
                 // Verify
@@ -242,14 +240,12 @@ describe("PngAppFilterStream", function() {
                 }
             });
 
-
             //
             // Run
             //
             source
                 .pipe( filter )
                 .pipe( destination );
-
 
             //
             // Verify
